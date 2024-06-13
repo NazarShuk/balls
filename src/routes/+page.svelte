@@ -1,24 +1,37 @@
 <script>
-	import { hashJson } from '$lib/index.js';
 	import Dropzone from 'svelte-file-dropzone';
 	import imghash from 'imghash';
 	import { readAsDataURL, readAsArrayBuffer } from '$lib/utils.js';
 	import { Buffer } from 'buffer';
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { SvelteToast, toast } from '@zerodevx/svelte-toast';
 
 	globalThis.Buffer = Buffer;
-
-	console.log(hashJson);
 
 	let file;
 	let fileDataUrl;
 	let selectedFileHash;
 
-	window.addEventListener('paste', async (event) => {
-		event.preventDefault();
-		console.log(event.clipboardData.files[0]);
-		file = event.clipboardData.files[0];
+	let hashedImages = {};
+	if (localStorage.getItem('hashedImages')) {
+		hashedImages = JSON.parse(localStorage.getItem('hashedImages'));
+	} else {
+		hashedImages = {};
+	}
 
-		fileDataUrl = await readAsDataURL(file);
+	function handleFileBrowse(e) {
+		handleFiles(e.target.files);
+	}
+
+	async function handleFiles(files) {
+		mostSimilarFile = null;
+		file = files[0];
+		try {
+			fileDataUrl = await readAsDataURL(file);
+		} catch (e) {
+			toast.push('Invalid image');
+		}
 
 		const img = new Image();
 
@@ -27,6 +40,8 @@
 
 		// Define what to do when the image is loaded
 		img.onload = async function () {
+			status = 'Predicting...';
+
 			// Create a canvas element
 			const canvas = document.createElement('canvas');
 			const ctx = canvas.getContext('2d');
@@ -41,17 +56,35 @@
 			// Get the image data
 			const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-			// Now you have the ImageData object which you can use
-			console.log(imageData);
-
-			console.log(fileDataUrl);
-			selectedFileHash = await imghash.hashRaw(
-				imageData,
-				16
-			);
-			console.log(selectedFileHash);
+			selectedFileHash = await imghash.hashRaw(imageData, 16);
 			compareHashes();
 		};
+	}
+
+	window.addEventListener('paste', async (event) => {
+		event.preventDefault();
+
+		await handleFiles(event.clipboardData.files);
+	});
+
+	onMount(() => {
+		let imagePaste = document.getElementById('image-paste');
+
+		imagePaste.addEventListener('dragover', (event) => {
+			event.preventDefault();
+
+			imagePaste.style.backgroundColor = 'var(--fg-color)';
+		});
+		imagePaste.addEventListener('drop', (event) => {
+			event.preventDefault();
+			handleFiles(event.dataTransfer.files);
+			imagePaste.style.backgroundColor = 'rgba(0,0,0,0)';
+		});
+
+		imagePaste.addEventListener('dragleave', (event) => {
+			event.preventDefault();
+			imagePaste.style.backgroundColor = 'rgba(0,0,0,0)';
+		});
 	});
 
 	// Calculate Hamming distance
@@ -67,55 +100,95 @@
 
 	let mostSimilarFile = '';
 	let lowestDistance = Infinity;
-    let allSimilarFiles = [];
+	let allSimilarFiles = [];
+	let status = '';
 
 	// Compare hashes and find the most similar
 	function compareHashes() {
 		lowestDistance = Infinity;
 		mostSimilarFile = '';
+		allSimilarFiles = [];
 
-		for (const [fileName, hash] of Object.entries(hashJson)) {
+		for (const [fileName, hash] of Object.entries(hashedImages)) {
+			status = `Predicting... ${fileName}`;
 			const distance = hammingDistance(selectedFileHash, hash);
 			if (distance < lowestDistance) {
 				lowestDistance = distance;
 				mostSimilarFile = fileName;
 			}
-            allSimilarFiles = [...allSimilarFiles, {fileName, distance}]
+			allSimilarFiles = [...allSimilarFiles, { fileName, distance }];
 		}
 
-		console.log(mostSimilarFile, lowestDistance, allSimilarFiles);
+		console.log(mostSimilarFile, lowestDistance);
 
-        allSimilarFiles.sort((a, b) => a.distance - b.distance);
+		allSimilarFiles.sort((a, b) => a.distance - b.distance);
+		status = '';
+	}
+	function percentCloseToZero(number) {
+		// Define the maximum range
+		const maxRange = 100;
+
+		// Ensure the number is within the acceptable range
+		if (number < -maxRange) number = -maxRange;
+		if (number > maxRange) number = maxRange;
+
+		// Calculate the percentage closeness to zero
+		const closeness = 100 - (Math.abs(number) / maxRange) * 100;
+
+		// Ensure the result is between 0% and 100%
+		return Math.max(0, Math.min(100, closeness));
 	}
 </script>
 
+<title>Find the ball</title>
+
+<button
+	style="background-color:transparent; right:0; position:fixed;"
+	on:click={() => {
+		goto('/load');
+	}}
+>
+	<span class="material-symbols-outlined" style="font-size: 48px; opacity: 0.5;">settings</span>
+</button>
+
 <div class="center" style="flex-direction: column;">
-	<h0>Find the ball</h0>
+	<div style="display: {localStorage.hashedImages ? 'block' : 'none'};">
+		<p>{status}</p>
 
-	<div class="image-paste">
-		{#if !file}
-			<h2 style="font-size: 2vw;">Paste image</h2>
+		<div class="image-paste" id="image-paste">
+			{#if !file}
+				<h2 style="font-size: 2vw;">Paste image</h2>
+			{/if}
+			{#if file}
+				<img src={fileDataUrl} style="width: 100%; height:100%;" alt="File" />
+			{/if}
 
-			<input type="file" style="display: none;" />
-		{/if}
-		{#if file}
-			<img src={fileDataUrl} style="width: 100%; height:100%;" alt="File" />
-		{/if}
+			<input type="file" style="display: none;" on:change={handleFileBrowse} id="file" />
+			<button
+				style="width: 15vw; height: 15vw; position:absolute; opacity:0;"
+				on:click={() => document.getElementById('file').click()}
+			></button>
+		</div>
+
+		<h1>
+			{#if mostSimilarFile}
+				<p>Predicted {mostSimilarFile} {percentCloseToZero(lowestDistance)}%</p>
+			{/if}
+		</h1>
+
+		<ul>
+			{#each allSimilarFiles.slice(0, 5) as { fileName, distance }}
+				<li>{fileName} {percentCloseToZero(distance)}%</li>
+			{/each}
+		</ul>
 	</div>
-
-    
-	<h1>
-        {#if mostSimilarFile}
-        Predicted {mostSimilarFile} with score {lowestDistance}
-        {/if}
-    </h1>
-    
-    <ul>
-        {#each allSimilarFiles.slice(0,5) as {fileName, distance}}
-        <li>{fileName} with score {distance}</li>
-        {/each}
-    </ul>
+	{#if Object.entries(hashedImages).length <= 0}
+		<h1>Image hashes are not loaded</h1>
+		<h2><a href="/load">Click here to go to the loading page</a></h2>
+	{/if}
 </div>
+
+<SvelteToast></SvelteToast>
 
 <style>
 	.image-paste {
@@ -126,5 +199,18 @@
 		display: flex;
 		justify-content: center;
 		align-items: center;
+		text-align: center;
+		transition: 0.5s;
+	}
+
+	.onDrop {
+		background-color: red;
+	}
+	.material-symbols-outlined {
+		font-variation-settings:
+			'FILL' 0,
+			'wght' 400,
+			'GRAD' 0,
+			'opsz' 24;
 	}
 </style>
