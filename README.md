@@ -4,7 +4,7 @@ Images are downloaded from the identification slide show. It uses the Google app
 
 **Note: this app was only made for demonstration purposes. Please do not use this app to cheat, as it is against BallsDex terms of service.**
 ## Usage
-To run it locally, first, clone the repository, and in the terminal run `npm run dev`. After that, open `localhost:5173` in your browser.
+To run it locally, first, clone the repository, and in the terminal run `npm install` and then `npm run dev`. After that, open `localhost:5173` in your browser.
 
 Or you can go to `https://balls-lake.vercel.app`. It is hosted by me :)
 
