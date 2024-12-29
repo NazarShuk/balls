@@ -1,3 +1,5 @@
+# Archived because of css being broken, and the images being outdated
+
 # Balls dex identifier
 Uses image hashing to find country balls in the Balls Dex discord bot.
 Images are downloaded from the identification slide show. It uses the Google app script script, to get all the images and their names.
